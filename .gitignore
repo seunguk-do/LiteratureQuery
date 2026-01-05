@@ -12,6 +12,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Environment variables
+.envrc
+
 # IO folders and ETC
 inputs/*
 outputs/*

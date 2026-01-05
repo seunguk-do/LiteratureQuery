@@ -1,0 +1,6 @@
+# Environment variables for LiteratureQuery
+# Copy this file to .envrc and fill in your actual values
+
+# Claude API Key (required for --provider claude)
+# Get your key from: https://console.anthropic.com/
+export ANTHROPIC_API_KEY=your_api_key_here

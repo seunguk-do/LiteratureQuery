@@ -3,10 +3,9 @@ Reference Extraction Module
 Uses a local LLM to extract references from academic papers based on user prompts.
 """
 
-import re
-import json
+import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 
 
 def load_text_file(txt_path: Path) -> str:
@@ -90,16 +89,20 @@ Now execute this analysis for the given task.
 
 
 def extract_references_with_llm(
-    txt_path: Path, user_query: str, model: Optional[str] = None
+    txt_path: Path,
+    user_query: str,
+    model: Optional[str] = None,
+    provider: str = "claude",
 ) -> Dict:
     """
-    Extract references from a text file using Ollama LLM.
+    Extract references from a text file using an LLM.
 
     Args:
         txt_path: Path to the converted text file
         user_query: User's query about which references to extract
-        model: Ollama model name (e.g., 'ministral-3', 'llama3.2').
+        model: LLM model name (e.g., 'ministral-3', 'claude-haiku-4-5').
                If None, generates manual template instead.
+        provider: LLM provider to use ('ollama' or 'claude')
 
     Returns:
         Dictionary containing extracted references
@@ -117,13 +120,20 @@ def extract_references_with_llm(
     # Create the extraction prompt
     prompt = create_extraction_prompt(paper_text, user_query)
 
-    # Option 1: Use Ollama LLM with specified model
-    if model:
-        return extract_with_ollama(prompt, txt_path, model)
-
-    # Option 2: Manual extraction template (default)
-    else:
+    # Manual extraction template mode (no LLM)
+    if model is None:
         return manual_extraction_template(paper_text, user_query, txt_path)
+
+    # Validate provider
+    if provider not in ["ollama", "claude"]:
+        print(f"✗ Invalid provider '{provider}'. Must be 'ollama' or 'claude'\n")
+        return {"error": f"Invalid provider: {provider}"}
+
+    # Route to appropriate LLM provider
+    if provider == "claude":
+        return extract_with_claude(prompt, txt_path, model)
+    else:  # provider == "ollama"
+        return extract_with_ollama(prompt, txt_path, model)
 
 
 def extract_with_ollama(prompt: str, txt_path: Path, model: str) -> Dict:
@@ -173,6 +183,66 @@ def extract_with_ollama(prompt: str, txt_path: Path, model: str) -> Dict:
         print(f"✗ Error with Ollama: {str(e)}\n")
         print(f"  Make sure the model '{model}' is available.")
         print(f"  Pull it with: ollama pull {model}\n")
+        return {"error": str(e)}
+
+
+def extract_with_claude(prompt: str, txt_path: Path, model: str) -> Dict:
+    """
+    Extract references using Claude API.
+
+    Args:
+        prompt: The extraction prompt
+        txt_path: Path to the text file being processed
+        model: Claude model name (e.g., 'claude-haiku-4-5')
+
+    Returns:
+        Dictionary with extraction results
+    """
+    try:
+        import anthropic
+
+        # Get API key from environment
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            print("✗ ANTHROPIC_API_KEY environment variable not set")
+            print("  Please set your API key:")
+            print("  export ANTHROPIC_API_KEY=your_key_here\n")
+            return {"error": "ANTHROPIC_API_KEY not set"}
+
+        print("🤖 Using Claude API for extraction...")
+        print(f"   Model: {model}")
+        print("   (This may take a few moments)\n")
+
+        # Call Claude API
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model=model,
+            max_tokens=8192,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        result = message.content[0].text
+
+        # Save the Claude output to outputs folder
+        output_dir = Path("outputs")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / f"{txt_path.stem}_references.txt"
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(result)
+
+        print(f"✓ Results saved to: {output_file}\n")
+
+        return {"status": "success", "output": result, "output_file": str(output_file)}
+
+    except ImportError:
+        print("⚠ Anthropic SDK not installed. Install with: uv add anthropic\n")
+        return {"error": "Anthropic SDK not installed"}
+    except Exception as e:
+        print(f"✗ Error with Claude API: {str(e)}\n")
+        print(
+            f"  Make sure your API key is valid and the model '{model}' is accessible.\n"
+        )
         return {"error": str(e)}
 
 
@@ -267,12 +337,15 @@ for ref_num in unique_refs:
     }
 
 
-def extract_from_all_papers(user_query: str, model: Optional[str] = None):
+def extract_from_all_papers(
+    user_query: str, model: Optional[str] = None, provider: str = "claude"
+):
     """Extract references from all converted papers.
 
     Args:
         user_query: The extraction query
-        model: Ollama model name. If None, generates manual templates.
+        model: LLM model name. If None, generates manual templates.
+        provider: LLM provider to use ('ollama' or 'claude')
     """
     txt_dir = Path("tmp/txts")
     txt_files = list(txt_dir.glob("*.txt"))
@@ -288,7 +361,7 @@ def extract_from_all_papers(user_query: str, model: Optional[str] = None):
 
     results = []
     for txt_file in txt_files:
-        result = extract_references_with_llm(txt_file, user_query, model)
+        result = extract_references_with_llm(txt_file, user_query, model, provider)
         results.append({"paper": txt_file.name, "result": result})
 
     return results

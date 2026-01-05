@@ -45,8 +45,11 @@ class Args:
     and optional LLM-powered extraction.
 
     Examples:
-        # Full workflow with LLM
+        # Full workflow with Claude API (default)
         python main.py "Extract references from Introduction"
+
+        # Use Ollama instead
+        python main.py "Extract all references" --provider ollama
 
         # With specific model
         python main.py "Extract all references" --model llama3.2
@@ -64,8 +67,11 @@ class Args:
     query: str
     """The extraction query (e.g., 'Extract references from the Introduction section')"""
 
-    model: str = "ministral-3"
-    """Ollama model to use for extraction (default: ministral-3)"""
+    provider: str = "claude"
+    """LLM provider to use: 'ollama' or 'claude' (default: claude)"""
+
+    model: str = ""
+    """LLM model to use. If not specified, uses default for provider (claude-haiku-4-5 for claude, ministral-3 for ollama)"""
 
     convert: bool = True
     """Convert PDFs to text (default: True). Use --no-convert to skip."""
@@ -82,6 +88,13 @@ def main():
     print_banner()
 
     args = tyro.cli(Args, description=Args.__doc__)
+
+    # Set default model based on provider if not specified
+    if not args.model:
+        if args.provider == "claude":
+            args.model = "claude-haiku-4-5"
+        else:  # ollama
+            args.model = "ministral-3"
 
     # Step 0: Clear temporary files if requested
     if args.clear:
@@ -104,14 +117,14 @@ def main():
     if args.extract:
         print("\n🔍 Step 2: Extracting references...\n")
         print(f"Query: {args.query}")
-        print(f"Mode: Ollama LLM")
+        print(f"Provider: {args.provider}")
         print(f"Model: {args.model}\n")
-        extract_from_all_papers(args.query, model=args.model)
+        extract_from_all_papers(args.query, model=args.model, provider=args.provider)
     else:
         print("\n📝 Step 2: Generating manual template...\n")
         print(f"Query: {args.query}")
         print("Mode: Manual template generation\n")
-        extract_from_all_papers(args.query, model=None)
+        extract_from_all_papers(args.query, model=None, provider=args.provider)
 
     print("\n✅ Process complete!\n")
 
