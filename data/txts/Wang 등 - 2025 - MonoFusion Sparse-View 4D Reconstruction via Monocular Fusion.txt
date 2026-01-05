@@ -1,0 +1,973 @@
+MonoFusion: Sparse-View 4D Reconstruction via Monocular Fusion
+ZihanWang,JeffTan,TarashaKhurana*,NeeharPeri∗,DevaRamanan
+CarnegieMellonUniversity
+Figure1.DynamicSceneReconstructionfromSparseViews.MonoFusionreconstructsdynamichumanbehaviors,suchasplayingthe
+pianoorperformingCPR,fromfourequidistantinward-facingstaticcameras. WevisualizetheRGBanddepthrenderingsofa45◦novel
+viewbetweentwotrainingviews.Trainingviewsareshownbelowforreference.
+Abstract [37], and robotics [57, 70]. Prior work often studies this
+problem in the context of dense multi-view videos, which
+We address the problem of dynamic scene reconstruction require dedicated capture studios that are prohibitively ex-
+from sparse-view videos. Prior work often requires dense pensive to build and are difficult to scale to diverse scenes
+multi-view captures with hundreds of calibrated cameras in-the-wild. In this paper, we aim to strike a balance be-
+(e.g. Panoptic Studio). Such multi-view setups are pro- tweentheeaseandinformativenessofmulti-viewdatacol-
+hibitively expensive to build and cannot capture diverse lection by reconstructing skilled human behaviors (e.g.,
+scenes in-the-wild. In contrast, we aim to reconstruct dy- playingapianoandperformingCPR)fromfourequidistant
+namichumanbehaviors,suchasrepairingabikeordanc- inward-facingstaticcameras(Fig. 1).
+ing, from a small set of sparse-view cameras with com-
+plete scene coverage (e.g. four equidistant inward-facing Problem setup. Despite recent advances in dynamic
+static cameras). We find that dense multi-view reconstruc- scene reconstruction [4, 16–18], current approaches often
+tionmethodsstruggletoadapttothissparse-viewsetupdue requiredozensofcalibratedcameras[23,38],arecategory
+to limited overlap between viewpoints. To address these specific [61], or struggle to generate multi-view consistent
+limitations, we carefully align independent monocular re- geometry[33]. Westudytheproblemofreconstructingdy-
+constructions of each camera to produce time- and view- namichumanbehaviorsfromanin-the-wildcapturestudio:
+consistentdynamicscenereconstructions. Extensiveexper- asmallsetof(4)portablecameraswithlimitedoverlapbut
+imentsonPanopticStudioandEgo-Exo4Ddemonstratethat complete scene coverage, such as in the large-scale Ego-
+our method achieves higher quality reconstructions than Exo4D dataset [20]. We argue that sparse-view limited-
+prior art, particularly when rendering novel views. Code, overlapreconstructionpresentsuniquechallengesnotfound
+data,anddata-processingscriptsareavailableonGithub. in dense multi-view setups and typical “sparse view” cap-
+tureswithlargecovisibility(Fig.2). Fordensemulti-view
+1.Introduction captures, it is often sufficient to rely solely on geometric
+and photometric cues for reconstruction, often making use
+Accurately reconstructing dynamic 3D scenes from multi- of classic techniques from (non-rigid) structure from mo-
+view videos is of great interest to the vision community, tion [13]. As a result, these methods fail in sparse-view
+with applications in AR/VR [36, 49], autonomous driving settingswithlimitedcross-viewcorrespondences.
+1
+5202
+luJ
+13
+]VC.sc[
+1v28732.7052:viXra
+[26,38]hasacceleratedradiancefieldtrainingandrender-
+ingviaanefficientrasterizationprocess. Follow-upworks
+[35,58,64]repurpose3DGStoreconstructdynamicscenes,
+often by optimizing a fixed set of Gaussians in canonical
+space and modeling their motion with deformation fields.
+casual monocular captures sparse-view exocentric captures dense multi-view studio captures However,asGaoetal.[18]pointsout,suchmethodsoften
+struggletoreconstructrealisticvideos.Manyworksaddress
+Figure2.ProblemSetup.Oursparse-viewsetup(middle)strikes
+this shortcoming by relying on 2D point tracking priors
+a balance between ill-posed reconstructions from casual monoc-
+[54],fusingGaussiansfrommanytimesteps[30],modeling
+ular captures [18, 43] and well-constrained reconstructions from
+isotropic Gaussians [50], or exploiting domain knowledge
+dense multi-view studio captures [23]. Unlike existing “sparse-
+view” datasets like DTU [22] and LLFF [39], our setup is more suchashumanbodypriors[52].However,theseapproaches
+challengingbecauseinputviewsare90◦apartwithlimitedcross- studythereconstructionprobleminthemonocularsetting.
+viewcorrespondences. As 4D reconstruction from a single viewpoint is under-
+constrained,practicalroboticssetupsformanipulation[27]
+and hand-object interaction [11, 29, 53] adopt camera rigs
+Key insights. We find that initializing sparse-view re-
+whereasparsesetofcamerascapturethesceneofinterest.
+constructions with monocular geometry estimators like
+Similarly, datasets like Ego-Exo4D [20], DROID [27] and
+MoGe [55] produces higher quality results. However,
+H2O [29] explore sparse-view capture for dynamic scenes
+naively merging independent monocular geometry esti-
+in-the-wild.
+matesoftenyieldsinconsistentgeometryacrossviews(e.g.
+duplicatestructures),resultinginalocalminimaduring3D Novel-view synthesis from sparse views. Both NeRF
+optimization. Instead,wecarefullyalignmonocularrecon- and 3D Gaussian Splatting require dense input view cov-
+structions (that are independently predicted for each view erage, whichhinderstheirreal-worldapplicability. Recent
+and time) to a global reference frame that is learned from works aim to reduce the number of required input views
+astaticmulti-viewreconstructor(likeDUSt3R[56]). Fur- byaddingadditionalsupervisionandregularization,suchas
+thermore,manychallengesininferringview-consistentand depth[8]orsemantics[65]. FSGS[72]buildsonGaussian
+time-consistentdepthbecomedramaticallysimplifiedwhen splattingbyproducingfaithfulstaticgeometryfromasfew
+workingwithfixedcameraswithknownposes(inherentto asthreeviewsbyunpoolingexistingGaussiansandadopt-
+the in-the-wild capture setup that we target). For exam- ingextradepthsupervision.Recentstudiessuchas [60],on
+ple,temporallyconsistentbackgroundgeometrycanbeen- theotherhand,addsnoisetoGaussianattributesandrelies
+forcedbysimplyaveragingpredictionsovertime. ona pre-trainedControlNet[68] torepairlow-quality ren-
+Contributions. Wepresentthreemajorcontributions. deredimages.OtherworkssuchasMVSplat[5]buildacost
+• We highlight the challenge of reconstructing skilled hu- volume representation and predict Gaussian attributes in a
+man behaviors in dynamic environments from sparse- feed-forward manner. However, they can only synthesize
+viewcamerasin-the-wild. novelviewswithsmalldeviationsfromthenearesttraining
+• We demonstrate that monocular reconstruction methods view. Formethodsthatrelyonlearnedpriors,high-quality
+can be extended to the sparse-view setting by carefully novel view synthesis is often limited to images within the
+incorporatingmonoculardepthandfoundationalpriors. training distribution. Such methods cannot handle diverse
+• We extensively ablate our design choices and show that real-worldgeometry. Diffusion-basedreconstructionmeth-
+we achieve state-of-the-art performance on PanopticStu- ods[19,59,69]trytogenerateadditionalviewsconsistent
+dioandchallengingsequencesfromEgo-Exo4D. withthesparseinputviews, butoftenproduceartifacts. In
+ourcase,foursparseviewcamerasareseparatedaround90◦
+2.RelatedWork apart,posinguniquechallenges.
+Dynamics scene reconstruction. Dynamic scene recon- Feed-forward geometry estimation. Learning-based
+struction[4]hasreceivedsignificantinterestinrecentyears. methods, such as monocular depth networks, are able
+While classical work [9, 41] often relies on RGB-D sen- to reconstruct 3D objects and scenes by learning strong
+sors,orstrongdomainknowledge[2,7],recentapproaches priors from training data. While early works [10, 14]
+[33] based on neural radiance fields [40] have progressed focus on in-domain depth estimation, recent works build
+towards reconstructing dynamic scenes in-the-wild from foundational depth models by scaling up training data
+RGB video alone. However, such methods are compu- [46, 55, 63], resolving metric ambiguity from various
+tationally heavy, can only reconstruct short video clips camera models [21, 44], or relying on priors such as
+withlimiteddynamicmovement,andstrugglewithextreme Stable Diffusion [15, 24, 48]. Unfortunately, monocular
+novel view synthesis. Recently, 3D Gaussian Splatting depth networks are not scale or view consistent, and often
+2
+space-time consistent depth
+optimized scene representation
+sparse-view input feature-based motion bases
+& rasterized outputs
+Figure3. Approach. Givensparse-viewvideosequencesofascene(left),weaimtooptimizea3Dgaussianrepresentationovertime.
+WebeginbyrunningDUSt3R[56],astaticmulti-viewreconstructionmethod,onthesparseviewsofagivenreferencetimestamp. This
+generatesaglobalreferenceframethatconnectsallviews.Next,weuseMoGe[55]toindependentlypredictdepthmapsforeachcamera.
+Sincethesedepthpredictionsareonlydefineduptoanaffinetransformation,wemustestimateascaleandshiftforeachpredicteddepth
+mapacrossallviewsandtimeinstants. Toachievethis,weleveragethefactthatbackgroundpixelsremainstaticovertime. Specifically,
+foreachtimeinstantandeachview,wealignthebackgroundregionsofeachcamera’sdepthmaptotheglobalreferenceframebyadjusting
+thescaleandshiftparametersaccordingly(middle,top). Thisprocessrequiresaforeground-backgroundmaskforallinputvideos(which
+canbeobtainedusingoff-the-shelftoolslikeSAM2[47]). Toreduceocclusionsandnoisydepthpredictions,weconcatenateallaligned
+backgrounddepthpoints,andaveragecorrespondingbackgroundpoints(wherecorrespondenceacrosstimeistriviallygivenbythe2D
+pixelindexoftheunprojectedpointmap)acrosstime. Lastly,wefindthatmotionbasesconstructedfromfeature-clusteringformamore
+geometricallyconsistentsetofbases(middle,bottom),thanthoseinitializedbynoisy3Dtracks[54]. Ouroptimizationyieldsa4Dscene
+representationfromwhichwecanrasterizeRGBframes,depthmaps,aforegroundsilhouette,andobjectfeaturesfromnovelviews(right).
+requireextensivealignmentagainstground-truthtoproduce R ∈ SO(3)istheorientation,s ∈ R3 isthescale,α ∈ R
+0
+meaningfulmetricoutputs. Toaddresstheseshortcomings, istheopacity,andc∈R3isthecolor.Thepositionandori-
+DUSt3R[56]andMonST3R[67]proposethetaskofpoint entation are time-dependent, while the scale, opacity, and
+map estimation, which aims to recover scene geometry colorarepersistentovertime. Weadditionallyassignase-
+as well as camera intrinsics and extrinsics given a pair manticfeaturef ∈ RN toeachGaussian(Sec. 3.3),where
+of input images. These methods unify single-view and N =32isanarbitrarynumberrepresentingtheembedding
+multi-view geometry estimation, and enable consistent dimension of the feature. Empirically, we find that fixing
+depthestimationacrosseithertimeorspace. thecolorandopacityofGaussiansresultsinabetterperfor-
+mance. Insummary,forthei-th3DGaussian,theoptimiz-
+3.TowardsSparse-View4DReconstruction able attributes are given by Θ(i) = {x(i),R(i),s(i),f(i)}.
+0 0
+Following[71],theoptimizedGaussiansarerenderedfrom
+Givensparse-view(i.e. 3–4)videosfromstationarycam-
+agivencameratoproduceanRGBimageandafeaturemap
+erasasinput,ourmethodrecoversthegeometryandmotion
+usingatile-basedrasterizationprocedure.
+of a dynamic 3D scene (Fig. 3). We model the scene as
+canonical3DGaussians(Sec. 3.1),whichtranslateandro- 3.2.Space-TimeConsistentDepthInitialization
+tateviaalinearcombinationofmotionbases. Weinitialize
+Similar to recent methods [51, 54], we rely on data-driven
+consistent scene geometry by carefully aligning geometry
+monoculardepthpriorstoinitializethepositionandappear-
+predictions from multiple views (Sec. 3.2), and initialize
+anceof3DGaussiansovertime. Giventhesuccessofini-
+motiontrajectoriesbyclusteringper-point3Dsemanticfea-
+tializing 3DGS with monocular depth in single-view set-
+tures distilled from 2D foundation models (Sec. 3.3). We
+tings[54],onemightthinktonaturallyextendthistomulti-
+formulateajointoptimizationwhichsimultaneouslyrecov-
+viewsettingsbyindependentlyinitializingfrommonocular
+ersgeometryandmotion(Sec. 3.4).
+depth for each view. However, this yields conflicting ge-
+3.1.3DGaussianSceneRepresentation ometry signals, as monocular depth estimators commonly
+predict up to an unknown scale and shift factor. Thus, the
+Werepresentthegeometryandappearanceofdynamic3D
+unprojected monocular depths from separate views are of-
+scenesusing3DGaussianSplatting[26],duetoitsefficient
+teninconsistent,resultinginduplicatedobjectparts.
+optimization and rendering. Each Gaussian in the canon-
+ical frame t is parameterized by (x ,R ,s,α,c), where Multi-viewpointmapprediction. DUSt3R[56]predicts
+0 0 0
+x ∈ R3 is the Gaussian’s position in canonical frame, multi-viewconsistentpointmapsacrossK inputimagesby
+0
+3
+first inferring pairwise pointmaps, followed by a global motion-based3DGSoptimizationtoenforcesmoothnessof
+3Doptimizationthatsearchesforper-imagepointmapsand theforeground,describednext.
+pairwise similarity transforms (rotation, translation, and During our experiments, we identified two additional
+scale)thatbestalignsallpointmapswitheachother. limitationsthatsignificantlyimpactvisualquality.
+WerunDUST3Ronthemultiviewimagesattimet,but (1) Scale initialization: We observed that initializing 3D
+constrain the global optimization to be consistent with the Gaussian scales with k-nearest neighbors often results in
+K knownstationarycameraextrinsics{P }andintrinsics poorappearance, suchasextremelylargeGaussiansfilling
+k
+{K }. Thisproducesper-imageglobalpointmaps{χt}in emptyspaceandblurringthebackground. Toaddressthis,
+k k
+metriccoordinates. Onecanthencomputeadepthmapby wefollowSplaTAM[25]andinitializeeachGaussianscale
+simply projecting each pointmap back to each image with basedonitsprojectedpixelarea:scale= d ,where
+0.5(fx+fy)
+theknowncameras disapixel’sdepthandf ,f arefocallengths.
+x y
+dt(u,v) (cid:2) u v 1 (cid:3)T =K P χt(u,v) (1) (2)InsufficientGaussiandensity: UsingonlyoneGaussian
+k k k k per input pixel fails to adequately capture fine details. We
+insteadinitialize5Gaussiansperinputpixel,providingbet-
+This produces metric-scale multi-view consistent depth
+mapsdt(u,v),whicharestillnotconsistentovertime. terrepresentationoffinedetails.
+k
+Spatio-temporal alignment of monocular depth with 3.3.Grouping-basedMotionInitialization
+multi-view consistent pointmaps. In fact, even beyond
+Beyond initializing time- and view-consistent geometry in
+temporallyinconsistency,suchmultiviewpredictorstendto
+the canonical frame, we also aim to initialize reasonable
+underperform on humans since they are trained on multi-
+estimates of the scene motion. We model a dynamic 3D
+view data where dynamic humans are treated as outliers. scene as a set of N canonical 3D Gaussians, along with
+Instead,wefindmonoculardepthestimatorssuchasMoGe
+time-varyingrigidtransformationsT =[R t ]∈
+0→t 0→t 0→t
+[55] to be far more accurate, but such predictions are not SE(3)thatwarpfromcanonicalspacetotimet:
+metric (since they are accurate only up to an affine trans-
+formation) and are not guaranteed to be consistent across x =R x +t R =R R (3)
+t 0→t 0 0→t t 0→t 0
+views or times. Instead, our strategy is to use the multi-
+viewdepthmapsfromDUST3Rasametrictargettoalign
+Motionbases. SimilartoShapeofMotion[54],wemake
+monoculardepthpredictions, whichwewriteasmt(u,v).
+k theobservationthatinmostdynamicscenes,theunderlying
+Specifically,wesearchforscaleandshiftfactorsat andbt
+k k 3Dmotionisoftenlow-dimensional,andcomposedofsim-
+thatminimizethefollowingerror:
+plerunitsofrigidmotion.Forexample,theforearmstendto
+movetogetherasonerigidunit,despitebeingcomposedof
+argmin (cid:88) T (cid:88) K (cid:88) (cid:13) (cid:13)(atmt(u,v)+bt)−dt(u,v) (cid:13) (cid:13) 2 thousandsofdistinct3DGaussians. Ratherthanstoringin-
+k k k k dependent3Dmotiontrajectoriesforeach3DGaussian(i),
+{at k ,bt k } t=1k=1u,v∈BGt k wedefineasetofBlearnablebasistrajectories{T(i,b)}B .
+(2) 0→t b=1
+Thetime-varyingrigidtransformsarewrittenasaweighted
+where BGt refers to a pixelwise background mask for
+k combinationofbasistrajectories,usingfixedper-pointbasis
+camera k at frame t. The above uses metric background
+coefficients{w(i,b)}B :
+points as a target for aligning all monodepth predictions. b=1
+Theaboveoptimizationcanbesolvedquiteefficientlysince
+B
+eachtimetandviewkcanbeoptimizedindependentlywith T(i) = (cid:88) w(i,b)T(i,b) (4)
+0→t 0→t
+a simple least-squares solver (implying our approach will
+b=1
+easilyscaletolongvideos). However,theaboveoptimiza-
+tion will still produce scale factors that are not temporally Motion bases via feature clustering. Unlike Shape of
+consistent since the targets are temporally inconsistent as Motion which initializes motion bases by clustering 3D
+well. But we can exploit the constraint that background tracks, our key insight is that semantically grouping simi-
+points should be static across time for stationary cameras. lar scene parts together can help regularize dynamic scene
+To do so, we replace dt(u,v) with a static target d (u,v) motion,withouteverinitializingtrajectoriesfromnoisy3D
+k k
+obtainedbyaveragingdepthmapsovertimeorselectinga trackpredictions. Inspiredbythesuccessofrobustanduni-
+canonicalreferencetimestamp.Thefinalsetofscaledtime- versal feature descriptors [42], we obtain pixel-level fea-
+andview-consistentdepthmapsarethenunprojectedbackto turesforeachinputimagebyevaluatingDINOv2onanim-
+3Dpointmaps. Notethatthistendstoproduceaccuratepre- age pyramid. We average features across pyramid levels
+dictionsforstaticbackgroundpoints,butthedynamicfore- andreducethedimensionto32viaPCA[1].Wechoosethe
+ground may remain noisy because they cannot be naively small DINOv2 model with registers, as it produces fewer
+denoisedbysimpletemporalaveraging. Rather,werelyon peakyfeatureartifacts[6].
+4
+SGD3-nyD
+MOS-VM
+noisuFonoM
+Music Healthcare Music Healthcare
+RGB Depth RGB Depth RGB Depth RGB Depth
+Figure4.Qualitativeanalysisofheld-outviewsynthesisonExoRecon.Weshowqualitativeresultsofheld-outviewsynthesis(left)and
+a5◦ deviationfromthestaticcamerapositionattheheld-outtimestamp(right). Ascomparedtoothermulti-viewbaselines,ourmethod
+does dramatically better at interpolating the motion of dynamic foreground (left), even from new camera views (right). We posit that
+Dynamic3DGSsuffersbecauseoflackofgeometricconstraintsandMV-SOMhasduplicateforegroundartifactsbecauseofconflicting
+depthinitializationfromthefourviews.
+Giventheconsistentpixel-alignedpointmapsχ(time+view), 4.ExperimentalResults
+t,k
+we associate each pointmap with the 32-dim feature map
+Implementationdetails. Weoptimizeourrepresentation
+f computed from the corresponding image. We perform
+t,k
+withAdam[28]. Weuse18kgaussiansfortheforeground
+k-meansclusteringonper-pointfeaturesf toproducebini-
+and1.2Mforthebackground. WefixthenumberofSE(3)
+tial clusters of 3D points. After initializing 3D Gaussians
+from pointmaps, we set the motion basis weight w(i,b) to motionbasesto28andobtainthesefromfeatureclustering
+(Sec. 3.3). For the depth alignment, we use points above
+betheL2distancebetweentheclustercenterand3DGaus-
+sian center. We initialize the basis trajectories T(b) to be theconfidencethresholdof95%. Weshowresultson710-
+0→t seclongsequencesat30fpswitharesolutionof512×288.
+identity,andoptimizethemviadifferentiablerendering.
+Trainingtakesabout30minutesonasingleNVIDIAA6000
+GPU.Ourrenderingspeedisabout30fps.
+3.4.Optimization
+Datasets. We conduct qualitative and numerical evalua-
+As observed in prior work [17, 32], using photometric su-
+tion on Panoptic Studio [23] and a subset of Ego-Exo4D
+pervisionaloneisinsufficienttoavoidbadlocalminimain
+[20]whichwecallExoRecon.
+asparse-viewsetting. Ourfinaloptimizationprocedureisa
+Panoptic Studio is a massively multi-view capture sys-
+combination of photometric losses, data-driven priors, and
+tem which consists of 480 video streams of humans per-
+regularizationsonthelearnedgeometryandmotions.
+formingskilledactivities. Outofthese480views,weman-
+Duringeachtrainingstep,wesamplearandomtimestep uallyselect4cameraviews,90◦ aparttosimulatethesame
+tandcamerak. WerendertheimageˆI t,k ,maskMˆ t,k ,fea- exocentriccamerasetupasEgo-Exo4D.Giventhese4train-
+turesFˆ
+t,k
+,anddepthDˆ
+t,k
+. Wecomputereconstructionloss ingviewcameras,wefind4otherintermediatecameras45◦
+bycomparingtooff-the-shelfestimates: apart from the training views, and use these for evaluating
+novelviewsynthesisfrom45◦cameraviews.
+(cid:13) (cid:13) (cid:13) (cid:13) (cid:13) (cid:13) (cid:13) (cid:13)
+L =(cid:13)ˆI−I(cid:13) +λ (cid:13)Mˆ −M(cid:13) +λ (cid:13)Fˆ−F(cid:13) +λ (cid:13)Dˆ −D(cid:13) Forin-the-wildevaluationofsparse-viewreconstruction,
+recon (cid:13) (cid:13) m(cid:13) (cid:13) f(cid:13) (cid:13) d(cid:13) (cid:13)
+1 1 1 1 werepurposeEgo-Exo4D[20],whichincludessparse-view
+(5)
+videosofskilledhumanactivities.WhilemanyEgo-Exo4D
+We additionally enforce a rigidity loss between ran-
+scenariosareoutofscopefordynamicreconstructionwith
+domly sampled dynamic Gaussians and their k nearest
+existing methods (due to fine-grained object motion, spec-
+neighbors. Let Xˆ denote the location of a 3D Gaussian
+t ularsurfaces,orexcessivesceneclutter),wefindonescene
+at time t, and let Xˆ denote its location at time t′. Over
+t′ eachfromthe6differentscenariosinEgo-Exo4Dwithcon-
+neighboring3DGaussiansi,wedefine:
+siderable object motion: dance, sports, bike repair, cook-
+ing, music, healthcare. For each scene, we extract 300
+L = (cid:88) (cid:13) (cid:13)Xˆ −Xˆ(i) (cid:13) (cid:13) 2 − (cid:13) (cid:13)Xˆ −Xˆ(i) (cid:13) (cid:13) 2 (6) framesofsynchronizedRGBvideostreams,capturedfrom
+rigid (cid:13) t t (cid:13) (cid:13) t′ t′ (cid:13)
+2 2 4 different cameras with known parameters. We remove
+neighborsi
+5
+FullFrame DynamicOnly
+Dataset Method
+PSNR↑ SSIM↑ LPIPS↓ AbsRel↓ PSNR↑ SSIM↑ LPIPS↓ IOU↑
+SOM[54] 17.86 0.687 0.460 0.491 18.75 0.701 0.236 0.358
+Dyn3D-GS[38] 25.37 0.831 0.266 0.207 26.11 0.862 0.129 —
+PanopticStudio
+MV-SOM[54] 26.28 0.858 0.241 0.331 26.80 0.883 0.161 0.886
+MonoFusion 28.01 0.899 0.117 0.149 27.52 0.944 0.022 0.965
+SOM[54] 14.73 0.535 0.482 0.843 15.63 0.559 0.450 0.294
+Dyn3D-GS[38] 24.28 0.692 0.539 0.612 24.61 0.673 0.384 —
+ExoRecon MV-SOM-DS[54] 28.37 0.906 0.079 0.398 28.23 0.931 0.063 0.872
+MV-SOM[54] 26.91 0.890 0.138 0.474 27.31 0.919 0.078 0.845
+MonoFusion 30.43 0.927 0.061 0.290 29.71 0.947 0.017 0.963
+Table1. Quantitativeanalysisofheld-outviewsynthesis. Webenchmarkourmethodagainststate-of-the-artapproachesbyevaluating
+thenovel-viewrenderingandgeometricqualityonboththedynamicforegroundregionandtheentirescene,acrosstheheld-outframes
+frominputvideos. MV-SOMisamulti-viewversionofShape-of-Motion[54]thatweconstructbyinstantiatingfourdifferentinstances
+ofsingle-viewshapeofmotion,andoptimizethemtogether. OnPanopticStudio,groundtruthdepthforcomputingtheAbsRelmetricis
+obtainedfrom27-viewoptimizationoftheoriginalDynamic3DGS,andforExoRecon,weprojectthereleasedpointcloudsobtainedvia
+SLAMfromAriaglasses. Whenevaluatingsingle-viewbaselines,SOM[54],wenaivelyaggregatetheirpredictionsfromthefourviews
+andevaluatethisaggregatedpredictionagainsttheevaluationcameras.
+Method PSNR↑ SSIM↑ LPIPS↓ IOU↑ AbsRel(↓)
+SOM 16.73 0.554 0.491 0.287 0.578
+Dyn3D-GS 23.31 0.776 0.316 — 0.273
+MV-SOM 21.56 0.541 0.433 0.482 0.413
+MonoFusion 25.73 0.847 0.158 0.943 0.188
+Table2. Quantitativeanalysis of45◦ novel-viewsynthesis on
+Panoptic Studio. We benchmark our method against state-of-
+the-artapproachesbyevaluatingboththedynamicforegroundre-
+gionandtheentirescene.Notably,theevaluationisconductedon
+novelviewswherethecamerasareatleast45◦apartfromalltrain-
+ingviews. Weadditionallyevaluatethegeometricreconstruction
+qualitywithabsoluterelative(AbsRel)errorinrendereddepth.
+fisheyedistortionsfromallRGBvideosandassumeasim-
+ple pinhole camera model after undistortion. We call this
+subset ExoRecon, and show results on these sequences.
+Pleaseseetheappendixformorevisuals.
+Metrics. Wefollowpriorwork[38,62]inevaluatingthe
+perceptualandgeometricqualityofourreconstructionsus-
+ing PSNR, SSIM, LPIPS and absolute relative (AbsRel)
+error in depth. We compute these metrics on the entire
+image, and also on only the foreground region of inter-
+est. We additionally evaluate the quality of the dynamic
+foregroundsilhouettebyreportingmaskIoU,computedas
+(Mˆ&M)/(Mˆ||M). Similar to prior work [62], our evalu-
+ation views are a set of held-out frames, subsampled from
+theinputvideosfrom4exocentriccameras,inbothPanop-
+ticStudioandExoRecon.
+Note that since the cameras in our setup are station-
+ary,aboveevaluationonlyanalysestheinterpolationquality
+TG
+noisuFonoM
+SGD3-nyD
+MOS
+MOS-VM
+Figure5.Qualitativeresultsof45◦novel-viewsynthesisresults
+on Panoptic Studio. We show qualitative novel-view synthesis
+resultsofourmethodcomparedtobaselinesonthesoftball(left)
+andtennis(right)sequences. WevisualizethegroundtruthRGB
+image for the 45◦ at the top. Our rendered extreme novel-view
+RGBimagecloselymatchesgroundtruth. Wefindthatallother
+baselinesstruggletogeneralizetoextremenovelviews.
+of different methods. More explicitly, we also benchmark
+novel-viewsynthesisonPanopticStudiowithanevaluation
+camera placed 45◦ away from the training view cameras.
+Since such a ground-truth evaluation camera is not avail-
+ableinExoRecon,weonlyshowqualitativeresults.
+Baselines. We compare our method with prior work
+on dynamic scene reconstruction from single or multiple
+6
+Healthcare
+RGB Depth
+SGD3-nyD
+MOS
+MOS-VM
+SD-MOS-VM
+noisuFonoM
+Cooking Music Dancing
+RGB Depth RGB Depth RGB Depth
+Figure6. Qualitativeresultsof45◦ extremenovelviewsynthesisresultsonExoRecon(1/2). WevisualizetherasterizedRGBimage
+anddepthmapfromeachmethodfor4diverseEgoExosequences. Existingmonocularmethods(Row2,“SOM”)andtheirextensionto
+multi-view(Row3,“MV-SOM”)producepoorresultsrenderedfromadrasticallydifferentnovelview.MV-SOMimprovesuponSOMby
+optimizinga4Dscenerepresentationwithfourviewconstraints,butitstillsuffersfromduplicationartifacts. Ourmethod’scarefulpoint
+cloudinitializationandfeature-basedmotionbasesfurtherimproveonMV-SOM.EvenafterrunningMV-SOMwithmulti-view-consistent
+depthfromDUSt3R(Row4,“MV-SOM-DS”),wefindthatitstillfailsduetoreduceddepthquality,oftencausedbysuboptimalpairwise
+depthpredictionsonhumans. Pleaseseetheappendixformorebaselinecomparisons: wefindthatmulti-viewdiffusionmethodscontain
+additionalhallucinationsandimperfectalignmentbetweendifferentinputviews, andper-framesparse-view3Dreconstructionmethods
+sufferfromtemporalinconsistency,blurryreconstructionsandmissingdetails.
+views. Amongmethodsthatoperateonmonocularvideos, metric error (AbsRel) metrics. Note that when initializing
+we run Shape of Motion [54] on 8 scenes from Panoptic Dynamic 3DGS [38] with 4 views we find that COLMAP
+Studio following the setup of Dynamic 3D Gaussians [38] fails,andsothepointcloudinitializationforthisbaselineis
+and our curated dataset ExoRecon that covers 6 diverse froma27-viewCOLMAPoptimization.
+scenes. Finally, we consider two multi-view dynamic re- Interestingly, we find that although the monocular 4D
+constructionbaselines, Dynamic3DGaussians[38], anda reconstruction method Shape of Motion (SOM) [54] often
+naivemulti-viewextensionofShapeofMotion(MV-SOM). failstooutputaccuratemetricdepth,itisrobusttoalimited
+To construct the latter baseline, we simply concatenate camera shift. We hypothesize that the foundational priors
+the Gaussians and motion bases from four independently- of Shape of Motion allow it to produce reasonable results
+initialized instances of single-view SOM, and optimize all inunder-constrainedscenarios,whiletest-timeoptimization
+four instances jointly. We also evaluate a variant of MV- methods, especially ones that do not always rely on data-
+SOM with globally-consistent depth (denoted MV-SOM- driven priors [38], can more easily fall into local optima
+DS), obtained by running per-frame DUSt3R on the 4 in- (e.g. thosecausedbypoorinitialization)whicharedifficult
+put views and fixing camera poses to ground-truth during tooptimizeoutofviarenderinglossesalone.
+DUSt3R’s global alignment. Despite using our same hy- Evaluationona45◦ novel-view. OnPanopticStudio, we
+perparameters,MV-SOM-DShasmorevisualartifactsdue usethefourevaluationcameras(placed45◦ apartfromthe
+toreduceddepthquality, suggestingtheimportanceofour trainingviews)toevaluateourmethod’snovel-viewrender-
+DUSt3R+MoGedesign. Intheappendix,weverifythatall ing capability. We also evaluate the novel-view rendered
+baselinesreconstructreasonabletrainingviews. depth against a ‘pseudo-groundtruth’ depth obtained from
+optimizingDynamic3DGS[38]withall24trainingviews.
+4.1.ComparisontoState-of-the-Art
+InTab. 2andFig. 5,wefindthatourmethodoutperforms
+Evaluationonheld-outviews. InTab. 1,wecompareour allbaselines,achievingstate-of-the-art45◦novel-viewsyn-
+method to recent dynamic scene reconstruction baselines thesis. QualitativeresultsonExoReconareinFig. 6&7.
+[38,54,67],followingevaluationprotocolsfrompriorwork
+4.2.AblationStudy
+[54,62].OurmethodbeatspriorartonbothPanopticStudio
+andExoRecon(Fig.4)datasets,whenevaluatedonheld-out We ablate the design decisions in our pipeline in Tab. 3.
+views across photometric (PSNR, SSIM, LPIPS) and geo- Our proposed space-time consistent depth plays a crucial
+7
+Method L d T(b) ↑PSNR↑SSIM↓LPIPS↑IoU
+feat n 0→t Frames showed:
+Baseline ✗ ✗ ✗ 26.19 0.915 0.077 0.60 1. Dance –
+2. CPR – frame 47 +L ✓ ✗ ✗ 25.39 0.933 0.087 0.63 3. Cook – frame 0
+feat 4. Piano – frame 0
++Ourdepth/noL ✗ ✓ ✗ 29.55 0.944 0.037 0.73 5. Football – cam2 frame 47
+feat 6. Bike – last cam last frame
++Ourdepth/L ✓ ✓ ✗ 29.31 0.941 0.041 0.75
+feat
++Motionbases(Ours) ✓ ✓ ✓ 30.40 0.947 0.037 0.81
+Table 3. Ablation study of pipeline components. We ab-
+lateourchoiceoffeature-metricloss,spacetimeconsistentdepth, Football Bike Repair
+and feature-based motion bases. While the proposed depth and
+RGB Depth RGB Depth
+feature-basedmotionbasesconsiderablyimprove4Dreconstruc-
+tion(evaluatedbyphotometricerrors),wefindthatourfeatureloss
+helpslearnbettermotionmasks(evaluatedbyIoU).
+role in learning accurate scene geometry and appearance
+(yielding a 3.4 PSNR improvement, Row 1 vs 3). Next,
+(cid:13) (cid:13)
+we find that the feature-metric loss L = (cid:13)Fˆ−F(cid:13) pro-
+feat (cid:13) (cid:13)
+vides a trade-off between learning photometric properties
+vs.learningforegroundmotionandsilhouette. Althoughthe
+PSNR decreases, we see an increase in mask IoU (Row
+1 vs 2 and Row 3 vs 4). Freezing the color of all Gaus-
+siansacrossframesaidslearningthemotionmask,asmea-
+suredbymaskIoU.Finally,ourmotionbasesfromfeature-
+clusteringimproveoverallsceneoptimization(finalrow).
+Velocity-based vs. feature-based motion bases In the
+monocular setting, we empirically found that both designs
+performed equally well. However, in our 4 camera sparse
+viewsetting,wefoundthatfeature-basedmotionbasesper-
+form much better than velocity-based motion bases. The
+reason is that for velocity-based motion bases, we infer
+3Dvelocitybyqueryingthe2Dtrackingresultsplusdepth
+per frame following Shape-of-Motion[54]. Thus, noisy
+foreground depth estimates where the estimated depth of
+the person flickers between foreground and backward will
+negatively influence the quality of velocity-based motion
+bases,causingrigidbodypartstomoveerratically. Incon-
+trast,feature-basedmotionbases,wherefeaturesareinitial-
+izedfrommorereliableimage-levelobservations,aremore
+robust to noisy 3D initialization and force semantically-
+similar parts to move in similar ways. To validate our
+points, in Fig. 8 we use PCA analysis to visualize the in-
+ferredfeaturesandfindthattheyareconsistentnotonlyon
+temporalaxisbutalsoacrosscameras.
+Effect of different number of motion bases. When the
+number of motion bases is not expressive enough (in our
+experiencewhenthenumberofmotionbases< 20), there
+areoftenobviousflawsinthereconstruction,suchasmiss-
+ing arms or the two legs joining together into a single leg.
+Inreality,wedonotobservethatincreasingthenumberof
+motion bases further hurts the performance. Empirically,
+the capacity of our design (which is 28 motion bases) can
+effectivelyhandledifferentscenedynamics.
+SGD3-nyD
+MOS
+MOS-VM
+SD-MOS-VM
+noisuFonoM
+*retfarCweiV
+*talpStnatsnI
+MOS
+Football Bike Repair
+RGB Depth RGB Depth
+Figure7.Qualitativeresultsof45◦extremenovelviewsynthe-
+sisresultsonExoRecon(2/2). Weshowqualitativenovel-view
+synthesis results of our method compared to baselines on chal-
+lengingsequenceonExoRecon:highly-dynamic,largescenewith
+small foreground football (left) and complex, highly-occluded
+scenebikerepair(right).NotablyMonoFusionsignificantlybeats
+otherbaselinesintermsofquality.
+Figure8. Spatial-TemporalVisualizationoffeaturePCA.We
+perform PCA analysis and transform the 32-dim features from
+Sec. 3.3 down to 3 dimensions for visualization purposes. We
+findthatthefeaturesareconsistentacrossviewsandacrosstime.
+Notably, whenthepersonturnsaroundbetweent andt inob- 0 1
+servationsfromcam andcam , thefeatureremainsrobustand 1 2
+consistent. Thesemanticconsistencyoffeaturesaidsexplainabil-
+ity,providesastrongvisualcluefortracking,andgivesconfidence
+inourfeature-guidedmotionbases.
+5.Conclusion
+We address the problem of sparse-view 4D reconstruction
+of dynamic scenes. Existing multi-view 4D reconstruc-
+tionmethodsaredesignedfordensemulti-viewsetups(e.g.
+PanopticStudio). Incontrast,weaimtostrikeabalancebe-
+tweentheeaseandinformativenessofmulti-viewdatacap-
+ture by reconstructing skilled human behaviors from four
+equidistantinward-facingstaticcameras. Ourkeyinsightis
+thatcarefullyincorporatingpriors,intheformofmonocular
+depth and feature-based motion clustering, is crucial. Our
+empirical analysis shows that on challenging scenes with
+object dynamics, we achieve state-of-the-art performance
+onnovelspace-timesynthesiscomparedtopriorart.
+8
+References [16] ChenGao,AyushSaraf,JohannesKopf,andJia-BinHuang.
+Dynamicviewsynthesisfromdynamicmonocularvideo. In
+[1] ShirAmir,YossiGandelsman,ShaiBagon,andTaliDekel.
+IEEEInternationalConferenceonComputerVision(ICCV),
+Deepvitfeaturesasdensevisualdescriptors. arXivpreprint
+2021. 1
+arXiv:2112.05814,2021. 4
+[17] ChenGao,AyushSaraf,JohannesKopf,andJia-BinHuang.
+[2] Joel Carranza, Christian Theobalt, Marcus Magnor, and
+Dynamicviewsynthesisfromdynamicmonocularvideo. In
+Hans-Peter Seidel. Free-viewpoint video of human actors.
+ProceedingsoftheIEEE/CVFInternationalConferenceon
+ACMTrans.Graph.,22:569–577,2003. 2
+ComputerVision,pages5712–5721,2021. 5
+[3] JiazhongCen,ZanweiZhou,JieminFang,WeiShen,Lingxi [18] Hang Gao, Ruilong Li, Shubham Tulsiani, Bryan Russell,
+Xie,XiaopengZhang,andQiTian. Segmentanythingin3d andAngjooKanazawa. Monoculardynamicviewsynthesis:
+withnerfs. arXivpreprintarXiv:2304.12308,2023. 2 Arealitycheck.InAdvancesinNeuralInformationProcess-
+[4] GuikunChenandWenguanWang. Asurveyon3dgaussian ingSystems(NeurIPS),2022. 1,2
+splatting. arXivpreprint,2024. 1,2 [19] Ruiqi Gao, Aleksander Holynski, Philipp Henzler, Arthur
+[5] YuedongChen,HaofeiXu,ChuanxiaZheng,BohanZhuang, Brussee, Ricardo Martin-Brualla, Pratul Srinivasan,
+MarcPollefeys,AndreasGeiger,Tat-JenCham,andJianfei JonathanT.Barron,andBenPoole. Cat3d: Createanything
+Cai. Mvsplat: Efficient 3d gaussian splatting from sparse in 3d with multi-view diffusion models. arXiv preprint
+multi-viewimages,2024. 2 2405.10314,2024. 2
+[6] Timothe´e Darcet, Maxime Oquab, Julien Mairal, and Piotr [20] Kristen Grauman, Andrew Westbury, Lorenzo Torresani,
+Bojanowski. Visiontransformersneedregisters,2023. 4 Kris Kitani, Jitendra Malik, Triantafyllos Afouras, Kumar
+[7] EdilsondeAguiar,CarstenStoll,ChristianTheobalt,Naveed Ashutosh, Vijay Baiyya, Siddhant Bansal, Bikram Boote,
+Ahmed, Hans-Peter Seidel, and Sebastian Thrun. Perfor- Eugene Byrne, Zach Chavis, Joya Chen, Feng Cheng, Fu-
+mancecapturefromsparsemulti-viewvideo. SIGGRAPH, Jen Chu, Sean Crane, Avijit Dasgupta, Jing Dong, Maria
+2008. 2 Escobar, Cristhian Forigua, Abrham Gebreselasie, Sanjay
+Haresh, Jing Huang, Md Mohaiminul Islam, Suyog Jain,
+[8] Kangle Deng, Andrew Liu, Jun-Yan Zhu, and Deva Ra-
+Rawal Khirodkar, Devansh Kukreja, Kevin J Liang, Jia-
+manan.Depth-supervisednerf:Fewerviewsandfastertrain-
+ingforfree. arXivpreprintarXiv:2107.02791,2021. 2 WeiLiu, SagnikMajumder, YongsenMao, MiguelMartin,
+Effrosyni Mavroudi, Tushar Nagarajan, Francesco Ragusa,
+[9] Mingsong Dou, Sameh Khamis, Yury Degtyarev, Philip
+SanthoshKumarRamakrishnan,LuigiSeminara,ArjunSo-
+Davidson,SeanRyanFanello,AdarshKowdle,SergioOrts
+mayazulu,YaleSong,ShanSu,ZihuiXue,EdwardZhang,
+Escolano,ChristophRhemann,DavidKim,JonathanTaylor,
+Jinxu Zhang, Angela Castillo, Changan Chen, Xinzhu Fu,
+Pushmeet Kohli, Vladimir Tankovich, and Shahram Izadi.
+Ryosuke Furuta, Cristina Gonzalez, Prince Gupta, Jiabo
+Fusion4d: Real-time performance capture of challenging
+Hu,YifeiHuang,YimingHuang,WeslieKhoo,AnushKu-
+scenes. ACM Transactions on Graphics (TOG) - Proceed-
+mar, Robert Kuo, Sach Lakhavani, Miao Liu, Mi Luo,
+ingsofACMSIGGRAPH2016,35,2016. 2
+ZhengyiLuo,BrighidMeredith,AustinMiller,Oluwatumin-
+[10] DavidEigen,ChristianPuhrsch,andRobFergus.Depthmap
+inuOguntola,XiaqingPan,PennyPeng,ShramanPraman-
+predictionfromasingleimageusingamulti-scaledeepnet-
+ick,MereyRamazanova,FionaRyan,WeiShan,KiranSo-
+work. NeurIPS,pages2366–2374,2014. 2
+masundaram,ChenanSong,AudreySoutherland,Masatoshi
+[11] Zicong Fan, Omid Taheri, Dimitrios Tzionas, Muhammed
+Tateno,HuiyuWang,YuchenWang,TakumaYagi,Mingfei
+Kocabas, Manuel Kaufmann, Michael J Black, and Otmar
+Yan,XitongYang,ZechengYu,ShengxinCindyZha,Chen
+Hilliges. Arctic: A dataset for dexterous bimanual hand-
+Zhao, ZiweiZhao, ZhifanZhu, JeffZhuo, PabloArbelaez,
+objectmanipulation. InProceedingsoftheIEEE/CVFCon-
+Gedas Bertasius, David Crandall, Dima Damen, Jakob En-
+ferenceonComputerVisionandPatternRecognition,pages
+gel, Giovanni Maria Farinella, Antonino Furnari, Bernard
+12943–12954,2023. 2
+Ghanem,JudyHoffman,C.V.Jawahar,RichardNewcombe,
+[12] ZhiwenFan,KairunWen,WenyanCong,KevinWang,Jian HyunSooPark,JamesM.Rehg,YoichiSato,ManolisSavva,
+Zhang, Xinghao Ding, Danfei Xu, Boris Ivanovic, Marco Jianbo Shi, Mike Zheng Shou, and Michael Wray. Ego-
+Pavone, Georgios Pavlakos, Zhangyang Wang, and Yue exo4d:Understandingskilledhumanactivityfromfirst-and
+Wang. Instantsplat: Sparse-view gaussian splatting in sec- third-personperspectives,2023. 1,2,5
+onds,2024. 1 [21] MuHu,WeiYin,ChiZhang,ZhipengCai,XiaoxiaoLong,
+[13] DavidAForsythandJeanPonce.Amodernapproach.Com- Hao Chen, Kaixuan Wang, Gang Yu, Chunhua Shen, and
+putervision:amodernapproach,17:21–48,2003. 1 ShaojieShen. Metric3dv2: Aversatilemonoculargeomet-
+[14] Huan Fu, Mingming Gong, Chaohui Wang, Kayhan Bat- ricfoundationmodelforzero-shotmetricdepthandsurface
+manghelich,andDachengTao. Deepordinalregressionnet- normalestimation. arXivpreprintarXiv:2404.15506,2024.
+workformonoculardepthestimation. CVPR,pages2002– 2
+2011,2018. 2 [22] RasmusJensen,AndersDahl,GeorgeVogiatzis,EngilTola,
+[15] XiaoFu,WeiYin,MuHu,KaixuanWang,YuexinMa,Ping andHenrikAanæs. Largescalemulti-viewstereopsiseval-
+Tan,ShaojieShen,DahuaLin,andXiaoxiaoLong. Geowiz- uation. In2014IEEEConferenceonComputerVisionand
+ard:Unleashingthediffusionpriorsfor3dgeometryestima- PatternRecognition,pages406–413.IEEE,2014. 2
+tionfromasingleimage. InECCV,2024. 2 [23] HanbyulJoo, TomasSimon, XulongLi, HaoLiu, LeiTan,
+9
+LinGui,SeanBanerjee,TimothyGodisart,BartNabbe,Iain Gaufre: Gaussiandeformationfieldsforreal-timedynamic
+Matthews, et al. Panoptic studio: A massively multiview novelviewsynthesis. arXivpreprint,2023. 2
+systemforsocialinteractioncapture. IEEETransactionson [36] ZhiqiuLin,SiyuanCen,DanielJiang,JayKarhade,Hewei
+PatternAnalysisandMachineIntelligence(TPAMI),41(1): Wang,ChancharikMitra,TiffanyLing,YuhanHuang,Sifan
+190–204,2017. 1,2,5 Liu, Mingyu Chen, Rushikesh Zawar, Xue Bai, Yilun
+[24] BingxinKe,AntonObukhov,ShengyuHuang,NandoMet- Du, Chuang Gan, and Deva Ramanan. Towards under-
+zger,RodrigoCayeDaudt,andKonradSchindler.Repurpos- standing camera motions in any video. arXiv preprint
+ing diffusion-based image generators for monocular depth arXiv:2504.15376,2025. 1
+estimation. InProceedingsoftheIEEE/CVFConferenceon [37] Hao Lu, Tianshuo Xu, Wenzhao Zheng, Yunpeng Zhang,
+ComputerVisionandPatternRecognition(CVPR),2024. 2 WeiZhan,DalongDu,MasayoshiTomizuka,KurtKeutzer,
+[25] NikhilKeetha,JayKarhade,KrishnaMurthyJatavallabhula, and Yingcong Chen. Drivingrecon: Large 4d gaussian re-
+Gengshan Yang, Sebastian Scherer, Deva Ramanan, and constructionmodelforautonomousdriving. arXivpreprint
+JonathonLuiten. Splatam: Splat,track&map3dgaussians arXiv:2412.09043,2024. 1
+fordensergb-dslam,2024. 4
+[38] Jonathon Luiten, Georgios Kopanas, Bastian Leibe, and
+[26] Bernhard Kerbl, Georgios Kopanas, Thomas Leimku¨hler,
+Deva Ramanan. Dynamic 3d gaussians: Tracking by per-
+and George Drettakis. 3d gaussian splatting for real-time sistentdynamicviewsynthesis. In3DV,2024. 1,2,6,7
+radiance field rendering. ACM Transactions on Graphics
+[39] BenMildenhall,PratulP.Srinivasan,RodrigoOrtiz-Cayon,
+(ToG),42(4):1–14,2023. 2,3
+NimaKhademiKalantari,RaviRamamoorthi,RenNg,and
+[27] Alexander Khazatsky, Karl Pertsch, Suraj Nair, Ash-
+AbhishekKar. Locallightfieldfusion: Practicalviewsyn-
+win Balakrishna, Sudeep Dasari, Siddharth Karamcheti,
+thesiswithprescriptivesamplingguidelines. ACMTransac-
+SoroushNasiriany,MohanKumarSrirama,LawrenceYun-
+tionsonGraphics(TOG),2019. 2
+liang Chen, Kirsty Ellis, et al. Droid: A large-scale
+[40] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik,
+in-the-wild robot manipulation dataset. arXiv preprint
+JonathanTBarron,RaviRamamoorthi,andRenNg. Nerf:
+arXiv:2403.12945,2024. 2
+Representing scenes as neural radiance fields for view
+[28] Diederik P Kingma and Jimmy Ba. Adam: A method for
+synthesis. In European Conference on Computer Vision
+stochastic optimization. arXiv preprint arXiv:1412.6980,
+(ECCV),2020. 2
+2014. 5
+[41] Richard A Newcombe, Dieter Fox, and Steven M Seitz.
+[29] Taein Kwon, Bugra Tekin, Jan Stu¨hmer, Federica Bogo,
+Dynamicfusion: Reconstruction and tracking of non-rigid
+andMarcPollefeys. H2o: Twohandsmanipulatingobjects
+scenes in real-time. In IEEE Conference on Computer Vi-
+for first person interaction recognition. In Proceedings of
+sionandPatternRecognition(CVPR),2015. 2
+theIEEE/CVFinternationalconferenceoncomputervision,
+[42] MaximeOquab,Timothe´eDarcet,TheoMoutakanni,HuyV.
+pages10138–10148,2021. 2
+Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez,
+[30] Jiahui Lei, Yijia Weng, Adam Harley, Leonidas Guibas,
+DanielHaziza,FranciscoMassa,AlaaeldinEl-Nouby,Rus-
+and Kostas Daniilidis. Mosca: Dynamic gaussian fusion
+sell Howes, Po-Yao Huang, Hu Xu, Vasu Sharma, Shang-
+fromcasualvideosvia4dmotionscaffolds. arXivpreprint
+WenLi,WojciechGaluba,MikeRabbat,MidoAssran,Nico-
+arXiv:2405.17421,2024. 2
+las Ballas, Gabriel Synnaeve, Ishan Misra, Herve Jegou,
+[31] JiaheLi,JiaweiZhang,XiaoBai,JinZheng,XinNing,Jun
+JulienMairal,PatrickLabatut,ArmandJoulin,andPiotrBo-
+Zhou,andLinGu. Dngaussian: Optimizingsparse-view3d
+janowski. Dinov2: Learningrobustvisualfeatureswithout
+gaussian radiance fields with global-local depth normaliza-
+supervision,2023. 4
+tion. InProceedingsoftheIEEE/CVFConferenceonCom-
+puterVisionandPatternRecognition(CVPR),pages20775– [43] F.Perazzi, J.Pont-Tuset, B.McWilliams, L.VanGool, M.
+20785,2024. 1 Gross,andA.Sorkine-Hornung. Abenchmarkdatasetand
+evaluation methodology for video object segmentation. In
+[32] ZhengqiLi,SimonNiklaus,NoahSnavely,andOliverWang.
+IEEEConferenceonComputerVisionandPatternRecogni-
+Neuralsceneflowfieldsforspace-timeviewsynthesisofdy-
+namicscenes. InProceedingsoftheIEEE/CVFConference tion(CVPR),2016. 2
+on Computer Vision and Pattern Recognition, pages 6498– [44] LuigiPiccinelli,Yung-HsuYang,ChristosSakaridis,Mattia
+6508,2021. 5 Segu,SiyuanLi,LucVanGool,andFisherYu. UniDepth:
+[33] ZhengqiLi,QianqianWang,ForresterCole,RichardTucker, Universal monocular metric depth estimation. In Proceed-
+andNoahSnavely. Dynibar: Neuraldynamicimage-based ingsoftheIEEE/CVFConferenceonComputerVisionand
+rendering.InIEEEConferenceonComputerVisionandPat- PatternRecognition(CVPR),2024. 2
+ternRecognition(CVPR),2023. 1,2 [45] Luigi Piccinelli, Christos Sakaridis, Yung-Hsu Yang, Mat-
+[34] ZhengqiLi,RichardTucker,ForresterCole,QianqianWang, tia Segu, Siyuan Li, Wim Abbeloos, and Luc Van Gool.
+LinyiJin,VickieYe,AngjooKanazawa,AleksanderHolyn- Unidepthv2: Universal monocular metric depth estimation
+ski, and Noah Snavely. Megasam: Accurate, fast, and ro- madesimpler,2025. 2
+buststructureandmotionfromcasualdynamicvideos.arXiv [46] Rene´ Ranftl,AlexeyBochkovskiy,andVladlenKoltun. Vi-
+preprintarXiv:2412.04463,2024. 1 sion transformers for dense prediction. In Proceedings of
+[35] Yiqing Liang, Numair Khan, Zhengqin Li, Thu Nguyen- theIEEE/CVFinternationalconferenceoncomputervision,
+Phuoc, Douglas Lanman, James Tompkin, and Lei Xiao. pages12179–12188,2021. 2
+10
+[47] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang [60] ChenYang,SikuangLi,JieminFang,RuofanLiang,Lingxi
+Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Xie,XiaopengZhang,WeiShen,andQiTian. Gaussianob-
+Ra¨dle, Chloe Rolland, Laura Gustafson, et al. Sam 2: ject: High-quality3dobjectreconstructionfromfourviews
+Segment anything in images and videos. arXiv preprint withgaussiansplatting. SIGGRAPHAsia,2024. 2
+arXiv:2408.00714,2024. 3 [61] Gengshan Yang, Minh Vo, Natalia Neverova, Deva Ra-
+[48] Robin Rombach, Andreas Blattmann, Dominik Lorenz, manan,AndreaVedaldi,andHanbyulJoo.Banmo:Building
+PatrickEsser,andBjo¨rnOmmer.High-resolutionimagesyn- animatable 3d neural models from many casual videos. In
+thesiswithlatentdiffusionmodels,2021. 2 IEEEConferenceonComputerVisionandPatternRecogni-
+tion(CVPR),2022. 1
+[49] Chonghyuk Song, Gengshan Yang, Kangle Deng, Jun-Yan
+[62] JiaweiYang, JiahuiHuang, YuxiaoChen, YanWang, Boyi
+Zhu,andDevaRamanan.Total-recon:Deformablescenere-
+Li, Yurong You, Apoorva Sharma, Maximilian Igl, Peter
+construction for embodied view synthesis. In Proceedings
+Karkus, Danfei Xu, et al. Storm: Spatio-temporal re-
+oftheIEEE/CVFInternationalConferenceonComputerVi-
+construction model for large-scale outdoor scenes. arXiv
+sion,pages17671–17682,2023. 1
+preprintarXiv:2501.00602,2024. 6,7
+[50] Colton Stearns, Adam W. Harley, Mikaela Uy, Flo-
+[63] LiheYang, BingyiKang, ZilongHuang, ZhenZhao, Xiao-
+rian Dubost, Federico Tombari, Gordon Wetzstein, and
+gang Xu, Jiashi Feng, and Hengshuang Zhao. Depth any-
+Leonidas Guibas. Dynamic gaussian marbles for novel
+thingv2. arXiv:2406.09414,2024. 2
+viewsynthesisofcasualmonocularvideos. arXivpreprint
+[64] Ziyi Yang, Xinyu Gao, Wen Zhou, Shaohui Jiao, Yuqing
+arXiv:2406.18717,2024. 2
+Zhang, and Xiaogang Jin. Deformable 3d gaussians for
+[51] Stanislaw Szymanowicz, Christian Rupprecht, and Andrea
+high-fidelitymonoculardynamicscenereconstruction.arXiv
+Vedaldi. Splatter image: Ultra-fast single-view 3d recon-
+preprint,2023. 2
+struction. 2024. 3
+[65] AlexYu,VickieYe,MatthewTancik,andAngjooKanazawa.
+[52] Jeff Tan, Donglai Xiang, Shubham Tulsiani, Deva Ra- pixelnerf:Neuralradiancefieldsfromoneorfewimages. In
+manan,andGengshanYang. Dressrecon: Freeform4dhu- IEEEConferenceonComputerVisionandPatternRecogni-
+man reconstruction from monocular video. arXiv preprint tion, CVPR 2021, virtual, June 19-25, 2021, pages 4578–
+arXiv:2409.20563,2024. 2 4587,2021. 2
+[53] Jikai Wang, Qifan Zhang, Yu-Wei Chao, Bowen Wen, Xi- [66] Wangbo Yu, Jinbo Xing, Li Yuan, Wenbo Hu, Xiaoyu Li,
+aohu Guo, and Yu Xiang. Ho-cap: A capture system and ZhipengHuang,XiangjunGao,Tien-TsinWong,YingShan,
+dataset for 3d reconstruction and pose tracking of hand- and Yonghong Tian. Viewcrafter: Taming video diffusion
+objectinteraction. arXivpreprintarXiv:2406.06843, 2024. modelsforhigh-fidelitynovelviewsynthesis.arXivpreprint
+2 arXiv:2409.02048,2024. 1
+[54] QianqianWang,VickieYe,HangGao,JakeAustin,Zhengqi [67] Junyi Zhang, Charles Herrmann, Junhwa Hur, Varun Jam-
+Li,andAngjooKanazawa. Shapeofmotion:4dreconstruc- pani,TrevorDarrell,ForresterCole,DeqingSun,andMing-
+tionfromasinglevideo. arXivpreprintarXiv:2407.13764, Hsuan Yang. Monst3r: A simple approach for estimat-
+2024. 2,3,4,6,7,8 ing geometry in the presence of motion. arXiv preprint
+arXiv:2410.03825,2024. 3,7,1
+[55] Ruicheng Wang, Sicheng Xu, Cassie Dai, Jianfeng Xiang,
+[68] LvminZhang, AnyiRao, andManeeshAgrawala. Adding
+YuDeng,XinTong,andJiaolongYang. Moge: Unlocking
+conditional control to text-to-image diffusion models. In
+accurate monocular geometry estimation for open-domain
+IEEE/CVF International Conference on Computer Vision,
+images with optimal training supervision. arXiv preprint
+ICCV,pages3813–3824,2023. 2
+arXiv:2410.19115,2024. 2,3,4
+[69] QitaoZhao, AmyLin, JeffTan, JasonY.Zhang, DevaRa-
+[56] Shuzhe Wang, Vincent Leroy, Yohann Cabon, Boris
+manan, and Shubham Tulsiani. Diffusionsfm: Predicting
+Chidlovskii,andJeromeRevaud. Dust3r: Geometric3dvi-
+structure and motion via ray origin and endpoint diffusion,
+sionmadeeasy. InCVPR,2024. 2,3
+2025. 2
+[57] ZihanWang,BowenLi,ChenWang,andSebastianScherer.
+[70] ChangshiZhou, RongJiang, FengLuan, ShaoqiangMeng,
+Airshot: Efficientfew-shotdetectionforautonomousexplo-
+Zhipeng Wang, Yanchao Dong, Yanmin Zhou, and Bin
+ration. In 2024 IEEE/RSJ International Conference on In-
+He. Dual-arm robotic fabric manipulation with quasi-
+telligent Robots and Systems (IROS), pages 11654–11661,
+static and dynamic primitives for rapid garment flattening.
+2024. 1
+IEEE/ASME Transactions on Mechatronics, pages 1–11,
+[58] GuanjunWu,TaoranYi,JieminFang,LingxiXie,Xiaopeng 2025. 1
+Zhang,WeiWei,WenyuLiu,QiTian,andWangXinggang. [71] ShijieZhou,HaoranChang,SichengJiang,ZhiwenFan,Ze-
+4dgaussiansplattingforreal-timedynamicscenerendering. haoZhu,DejiaXu,PradyumnaChari,SuyaYou,Zhangyang
+arXivpreprint,2023. 2 Wang, andAchutaKadambi. Feature3dgs: Supercharging
+[59] Rundi Wu, Ben Mildenhall, Philipp Henzler, Keunhong 3dgaussiansplattingtoenabledistilledfeaturefields.CVPR,
+Park, Ruiqi Gao, Daniel Watson, Pratul P. Srinivasan, Dor 2024. 3
+Verbin, Jonathan T. Barron, Ben Poole, and Aleksander [72] ZehaoZhu,ZhiwenFan,YifanJiang,andZhangyangWang.
+Holynski.Reconfusion:3dreconstructionwithdiffusionpri- FSGS: real-time few-shot view synthesis using gaussian
+ors. InCVPR,2024. 2 splatting. CoRR,abs/2312.00451,2023. 2
+11
+MiRroR(cam3 frame X
+66+ roll_out_cam_1)
+Appendix
+RGB Depth
+A.AdditionalBaselineComparisons
+To highlight the challenge of sparse-view 4D reconstruc-
+tion,wecomparewithfiveadditionalbaselinesformonoc-
+ular4Dreconstructionandsparse-viewreconstruction. Our
+methodremainsstate-of-the-art.
+Method PSNR↑ SSIM↑ LPIPS↓ Description
+MV-MonST3R[67] 12.64 0.475 0.574 Monocular4Dreconstruction
+MV-MegaSAM[34] 14.25 0.578 0.412 Monocular4Dreconstruction
+ViewCrafter[66] 24.97 0.834 0.135 Multi-viewdiffusion
+DNGaussian[31] 27.34 0.897 0.103 Sparse-viewreconstruction
+InstantSplat[12] 29.11 0.909 0.082 Sparse-viewreconstruction
+MonoFusion 30.64 0.930 0.055 Ours
+Baseline: Monocular 4D reconstruction. We compare
+withMonST3R,aswellasMegaSAMwhichclaimsbetter
+resultsthanMonST3R.Foreachmethod,wereportthebest
+resultamongusingasingle-viewvideo,concatenatingthe4
+viewsintolongervideo,orinterleavingthe4views(simu-
+latinga“rotating”camera). MonST3RandMegaSAMfail
+in sparse-view scenarios, especially with large viewpoint
+shifts. Whengivenconcatenatedorinterleavedsparse-view
+videosasinput, bothmodelssimplycopytheinputframes
+onto flat planes: notice the image corners in visual re-
+sults. Given a single input video, both models are miss-
+ing large regions due to occlusions and unseen geometry
+pastthevideoboundary.Withoutnon-triviallyhandlingim-
+ages from multiple wide-baseline input views, MonST3R
+and MegaSAM alone cannot produce view-consistent re-
+constructions. Baseline: Multi-view diffusion . We use
+ViewCrafter,avideodiffusionmethodfornovel-viewsyn-
+thesis, tonovelviewsateachtimestep. ViewCrafter’sren-
+dered views are worse than our method’s outputs, due to
+grid-like rendering artifacts, missing black regions of the
+scene, additional hallucinations, and imperfect alignment
+between different input views. Baseline: Sparse-view
+methods. Wecomparewithalternativesparse-viewmeth-
+ods InstantSplat and DNGaussian. Although they do not
+handle dynamic scenes, we run them independently per
+frame.Bothmethodssufferfromblurryreconstructionsand
+missing details, although InstantSplat benefits from cross-
+viewconsistencycomingfromDUSt3R.Aqualitativeanal-
+ysisofallbaselinesfor5◦ and45◦ novelviewsynthesison
+theExoRecondatasetisavailableinFig. 10and11.
+B.TrainingViewRenderings
+Tobuildconfidenceinourimplementations,wevalidateev-
+erybaselinewerunbyverifyingthateachmethodlooksrea-
+sonableattrainingviews(Fig.9).Itisworthnoticingthatin
+eachiterationofoptimization,wesampleabatchofframes
+outofthevideotooptimizetheoverallloss. Asthelossis
+optimizedasaglobalminimumaveragedoverallframes,it
+ispossiblethatsomeartifactsremainforcertainframes.
+hturT
+dnuorG
+SGD3
+cimanyD
+MOS
+MOS-VM
+sruO
+RGB Depth
+Figure9.Trainingviewresults.WevisualizetherasterizedRGB
+imageanddepthmapfromeachmethodforthedancing(left)and
+bikerepair(right)sequences. Allmethodsarecapableofproduc-
+ingreasonabletrainingviewsanddepthmaps.Itisworthnoticing
+thatineachiterationofoptimization,wesampleabatchofframes
+outofthevideotooptimizetheoverallloss. Asthelossisopti-
+mizedasaglobalminimumaveragedoverallframes,itispossible
+thatsomeartifactsremainforcertainframes.
+C.TrainingDetails
+In Tab. 4, we report the learning rate and loss weights
+of Gaussians in our optimization process. These hyperpa-
+rameters are shared across every scene that we evaluated
+on. Specifically,L enforcessmoothmotionbases
+smoothbases
+by penalizing high accelerations in rotations and transla-
+tions. L promotessmoothobjecttracksbypenal-
+smoothtracks
+izing large accelerations in object positions across frames.
+L aligns the gradients of the predicted and ground
+depthgrad
+truth depth maps to preserve structural details. L pe-
+zaccel
+nalizeshighaccelerationsalongthedepthaxistoreducejit-
+terindepthestimation. L constrainsthevarianceof
+scaleval
+scale parameters of Gaussians to achieve consistent repre-
+sentations.
+Table4. Traininghyper-parameters: learningrates(left)andloss
+weights(right)shownrow-by-row
+LearningRates LossWeights
+Parameter FGLR BGLR MotionLR LossParam. Weight
+means 1.6×10−4 1.6×10−4 – wrgb 7.0
+opacities 1×10−2 1×10−2 – wmask 5.0
+scales 5×10−3 1×10−3 – wfeat 7.0
+quats 1×10−3 1×10−3 – wsmoothbases 0.1
+colors 0 1×10−2 – wdepthreg 1.0
+feats 1×10−3 1×10−3 – wsmoothtracks 2.0
+motioncoefs 1×10−3 – – wscalevar 1 0.01
+rots – – 1.6×10−4 wzaccel 1.0
+transls – – 1.6×10−4 wtrack 2.0
+1
+Healthcare Cooking Music Football
+SGD3-nyD
+Dancing Bike Repair
+R3TSnoM-VMMaSageM-VM
+retfarCweiV
+talpStnatsnI
+MOS
+MOS-VM
+SD-MOS-VM
+noisuFonoM
+Figure10.Qualitativeresultsof45◦extremenovelviewsynthesisresultsonExoRecon.Foreachofthebaselinemethodsconsideredin
+themainpaperandintheappendix,wevisualizetherasterizedRGBimagefromeachmethodfora45◦novel-viewfromoneofthetraining
+views. Resultssuggestthatpriorworkthatistunedforadensecamerasetupstrugglestoworkinthesparse-viewcase,andmethodsthat
+aretunedforamonocularinputcannotnaivelyaddressamulti-viewsetup.OurproposedMonoFusion,successfullyusespriorsintheform
+ofmonoculardepthandfeature-basedmotionclusteringtoachievethebestofbothworlds.
+D.Alternativedesignchoice E.LimitationsandFutureWork
+Weexplorehigher-qualityandmetric-scaledepthinitializa-
+tion, by replacing UniDepth in MV-SOM with improved We address two key limitations of our work. First, like
+metricdepthestimators.Ourresultssuggestthatsimplyim- previousmethods, werelyheavilyon2Dfoundationmod-
+provingthequalityofmetric-scaledepthinMV-SOMisnot els to estimate priors (e.g. depth and dynamic masks) for
+enough. gradient-baseddifferentiablerenderingoptimization. Thus,
+imprecise priors can harm the downstream rendering pro-
+cess.Inaddition,thecurrentpipelinerequiresauserprompt
+Method PSNR↑ SSIM↑ LPIPS↓ IOU↑ AbsRel(↓)
+tospecifydynamicmasksforeachmovingobject[3],which
+w/UniDepth[44] 26.91 0.890 0.138 0.845 0.474
+w/Metric3Dv2[21] 27.29 0.894 0.132 0.847 0.462 can be labor-intensive for complex scenes and may fail in
+w/UniDepthV2[45] 27.65 0.900 0.103 0.872 0.356 some cases (Fig. 12). To solve this, distilling dynamic
+MonoFusion 30.64 0.930 0.055 0.963 0.290
+masksfromfoundationmodelsorinferringdynamicmasks
+2
+5° Novel View Synthesis
+RGB Depth Mask
+cisuM
+gnikooC
+eraChtlaeH
+Cam_3 → cook
+Cam_ → music
+Cam_ → basketball
+cam __ → cpr
+45° Novel View Synthesis
+RGB Depth Mask
+Figure11. Novelviewsynthesisresultsfrommorevideosequences. Ineachrow,wevisualizetherasterizedRGBimage,depthmap,
+andforegroundmaskfromourmethodforvariousdiversesceneincludingmusic(top),cooking(middle),andhealthcare(bottom). We
+includeresultsfor5◦ (left)and45◦ (right)novelvie
+Mi
+w
+RroR
+s
+(
+y
+ca
+n
+m3
+t h
+fra
+e
+m
+s
+e
+i
+X
+s results. Notably,therenderedRGBanddepthmapsprodMuiRcroeR(ccaomn3s firsamteen Xt
+reconstructionsandplausiblegeometry. 66+ roll_out_cam_1) 66+ roll_out_cam_1)
+Figure12.FailureexampleofSAM-V2.Wequalitativelyinspect
+theSAM-V2dynamicforegroundmasksonthekitchen(top)and
+bikerepair(bottom)scenes. Thedynamicmaskishighlightedin
+purple, and failures in dynamic mask estimation are highlighted
+Figure 13. Visualization of foreground projection for differ-
+inredcircle. WeobservethatSAM-V2canmissimportantbody
+entcheckpoints.Hereweshowtheprojectionbyknowncameras
+parts(e.g. theperson’shands)orgetconfusedbythebackground
+and ground-truth foreground masks, using the point cloud from
+(asshownintoprow).Long-termocclusionwillalsoleadtotrack- DUSt3R(toprow)andMonST3R(bottomrow)fortwoselected
+ingfailure(asshowninbottomrow). Thesefailurecasessuggest
+cameras(eachcolumnrepresentsonecamera). Notably,although
+that dynamic mask tracking in complex scenes remains an open
+MonST3R is fine-tuned on temporal frame sequences instead of
+challenge.
+multi-viewinformation,MonST3Rbenefitsfromthepresenceof
+dynamic foreground movers in its fine-tuning dataset and thus
+givesabetterforegroundresult.
+fromimagelevelpriors(asin[67])couldbebeneficial.
+Second, most off-the-shelf feed-forward depth estima- Webelievethatthesefundamentalproblemswiththedepth
+tion networks are trained on simple scene-level datasets, predictionscannotbesolvedbyanyalignmentintheoutput
+with few dynamic movers (e.g. people) in the foreground. space. To mitigate this issue, we plan to further fine-tune
+In practice, we observe that the depth of humans in dy- DUSt3RorMonST3Ronexistingdynamichumandatasets.
+namic scenes is often incorrect when observed from other
+views(Fig. 13). Forexample,DUSt3Roftenestimatesthe
+depthofahumantobethesameasthedepthofsurround-
+ingwalls,causingthehumantoblendintothebackground.
+3
